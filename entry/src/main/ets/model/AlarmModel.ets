@@ -2,6 +2,7 @@ import { calendarManager } from '@kit.CalendarKit'
 import { common } from '@kit.AbilityKit'
 import { abilityAccessCtrl, Permissions } from '@kit.AbilityKit'
 import { hilog } from '@kit.PerformanceAnalysisKit'
+import { notificationManager } from '@kit.NotificationKit'
 
 const TAG: string = 'AlarmModel'
 const DOMAIN: number = 0xFF00
@@ -70,6 +71,34 @@ export class CalendarAlarmService {
       if (!isPermitted) {
         hilog.error(DOMAIN, TAG, 'Calendar permissions denied')
         return false
+      }
+      try {
+        let isEnabled: boolean = await notificationManager.isNotificationEnabled()
+        if (!isEnabled) {
+          await notificationManager.requestEnableNotification(context)
+          hilog.info(DOMAIN, TAG, 'Notification permission granted')
+        }
+      } catch (ne) {
+        hilog.error(DOMAIN, TAG, 'Notification permission error: %{public}s', JSON.stringify(ne))
+      }
+      try {
+        await notificationManager.addSlot(notificationManager.SlotType.SOCIAL_COMMUNICATION)
+        let slot: notificationManager.NotificationSlot = await notificationManager.getSlot(notificationManager.SlotType.SOCIAL_COMMUNICATION)
+        slot.notificationLevel = notificationManager.SlotLevel.LEVEL_HIGH
+        slot.bypassDnd = true
+        slot.vibrationEnabled = true
+        slot.badgeFlag = true
+        slot.lockscreenVisibility = 1
+        await notificationManager.addSlot(notificationManager.SlotType.SERVICE_INFORMATION)
+        let slot2: notificationManager.NotificationSlot = await notificationManager.getSlot(notificationManager.SlotType.SERVICE_INFORMATION)
+        slot2.notificationLevel = notificationManager.SlotLevel.LEVEL_HIGH
+        slot2.bypassDnd = true
+        slot2.vibrationEnabled = true
+        slot2.badgeFlag = true
+        slot2.lockscreenVisibility = 1
+        hilog.info(DOMAIN, TAG, 'NotificationSlots configured (LEVEL_HIGH, bypassDnd)')
+      } catch (se) {
+        hilog.error(DOMAIN, TAG, 'addSlot failed: %{public}s', JSON.stringify(se))
       }
       this.calendarMgr = calendarManager.getCalendarManager(context)
       this.calendar = await this.calendarMgr.createCalendar(this.calendarAccount)

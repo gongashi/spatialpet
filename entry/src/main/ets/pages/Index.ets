@@ -5,7 +5,9 @@ import { Scene, Camera, SceneResourceFactory, SceneNodeParameters, Light, LightT
 import { common } from '@kit.AbilityKit'
 import { VoiceService } from '../model/VoiceService'
 import { hilog } from '@kit.PerformanceAnalysisKit'
-import { pasteboard } from '@kit.BasicServicesKit'
+import { pasteboard, commonEventManager } from '@kit.BasicServicesKit'
+import { sensor } from '@kit.SensorServiceKit'
+import { motion, deviceStatus } from '@kit.MultimodalAwarenessKit'
 
 const TAG: string = 'SpatialPet'
 const DOMAIN: number = 0xFF00
@@ -43,6 +45,15 @@ struct Index {
   @State loadMsg: string = ''
   @State rotY: number = 0
   @State rotX: number = 0
+  @State isScreenOff: boolean = false
+  @State deviceOrientation: string = '未知'
+  @State isStationary: boolean = false
+  @State holdingHand: string = '未握持'
+  @State sleepGuess: string = '活动'
+  private lastAccX: number = 0
+  private lastAccY: number = 0
+  private lastAccZ: number = 0
+  private stationaryFrames: number = 0
   private breathTimer: number = -1
   private decayTimer: number = -1
   private glowTimer: number = -1
@@ -55,6 +66,7 @@ struct Index {
   private catNode: Node | null = null
   private voiceService: VoiceService = new VoiceService()
   private calendarAlarm: CalendarAlarmService = new CalendarAlarmService()
+  private screenSubscriber: commonEventManager.CommonEventSubscriber | null = null
 
   aboutToAppear(): void {
     this.todoList.addItem('晨间锻炼', 2, 7, 0)
@@ -71,6 +83,10 @@ struct Index {
     this.voiceService.init(ctx)
     this.initCalendarAlarm(ctx)
     this.load3DScene()
+    this.subscribeScreenEvents()
+    this.startOrientationSensor()
+    this.startAccelerometer()
+    this.startHoldingHandDetect()
   }
 
   async initCalendarAlarm(ctx: common.UIAbilityContext): Promise<void> {
@@ -90,13 +106,146 @@ struct Index {
     hilog.info(DOMAIN, TAG, 'alarmList refreshed: %{public}d items', this.alarmList.items.length)
   }
 
+  subscribeScreenEvents(): void {
+    let subscribeInfo: commonEventManager.CommonEventSubscribeInfo = {
+      events: ['usual.event.SCREEN_OFF', 'usual.event.SCREEN_ON']
+    }
+    let subscriber: commonEventManager.CommonEventSubscriber = commonEventManager.createSubscriberSync(subscribeInfo)
+    this.screenSubscriber = subscriber
+    commonEventManager.subscribe(subscriber, (err, data) => {
+      if (err) {
+        hilog.error(DOMAIN, TAG, 'screen event subscribe error: %{public}s', JSON.stringify(err))
+        return
+      }
+      if (data.event === 'usual.event.SCREEN_OFF') {
+        this.isScreenOff = true
+        this.spirit.currentMessage = '主人熄屏了，灰灰乖乖等你回来喵~'
+        this.spirit = this.spirit.copy()
+        this.updateSleepGuess()
+        hilog.info(DOMAIN, TAG, 'Screen OFF detected')
+      } else if (data.event === 'usual.event.SCREEN_ON') {
+        this.isScreenOff = false
+        this.spirit.currentMessage = '主人回来了！灰灰好开心喵~'
+        this.spirit.happiness = Math.min(100, this.spirit.happiness + 3)
+        this.spirit = this.spirit.copy()
+        this.updateSleepGuess()
+        hilog.info(DOMAIN, TAG, 'Screen ON detected')
+      }
+    })
+  }
+
+  startOrientationSensor(): void {
+    try {
+      sensor.on(sensor.SensorId.ORIENTATION, (data: sensor.OrientationResponse) => {
+        let beta: number = data.beta
+        let gamma: number = data.gamma
+        let absBeta: number = Math.abs(beta)
+        let absGamma: number = Math.abs(gamma)
+        if (absBeta < 30 && absGamma < 30) {
+          this.deviceOrientation = '平放'
+        } else if (absBeta > 60 && beta < 0 && absGamma < 30) {
+          this.deviceOrientation = '竖放'
+        } else if (absBeta > 60 && beta > 0 && absGamma < 30) {
+          this.deviceOrientation = '倒竖放'
+        } else if (absGamma > 30 && gamma < 0) {
+          this.deviceOrientation = '横放左倾'
+        } else if (absGamma > 30 && gamma > 0) {
+          this.deviceOrientation = '横放右倾'
+        } else {
+          this.deviceOrientation = '倾斜'
+        }
+      }, { interval: 200000000 })
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'orientation sensor error: %{public}s', JSON.stringify(e))
+    }
+  }
+
   aboutToDisappear(): void {
     if (this.breathTimer !== -1) clearInterval(this.breathTimer)
     if (this.decayTimer !== -1) clearInterval(this.decayTimer)
     if (this.glowTimer !== -1) clearInterval(this.glowTimer)
-if (this.sparkleTimer !== -1) clearInterval(this.sparkleTimer)
-      if (this.tailTimer !== -1) clearInterval(this.tailTimer)
+    if (this.sparkleTimer !== -1) clearInterval(this.sparkleTimer)
+    if (this.tailTimer !== -1) clearInterval(this.tailTimer)
     if (this.autoRotTimer !== -1) clearInterval(this.autoRotTimer)
+    if (this.screenSubscriber !== null) {
+      commonEventManager.unsubscribe(this.screenSubscriber, () => {})
+    }
+    try {
+      sensor.off(sensor.SensorId.ORIENTATION)
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'sensor.off error: %{public}s', JSON.stringify(e))
+    }
+    try {
+      sensor.off(sensor.SensorId.ACCELEROMETER)
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'acc sensor.off error: %{public}s', JSON.stringify(e))
+    }
+    try {
+      motion.off('holdingHandChanged')
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'motion.off error: %{public}s', JSON.stringify(e))
+    }
+  }
+
+  startAccelerometer(): void {
+    try {
+      sensor.on(sensor.SensorId.ACCELEROMETER, (data: sensor.AccelerometerResponse) => {
+        let diffX: number = Math.abs(data.x - this.lastAccX)
+        let diffY: number = Math.abs(data.y - this.lastAccY)
+        let diffZ: number = Math.abs(data.z - this.lastAccZ)
+        let totalDiff: number = diffX + diffY + diffZ
+        if (totalDiff < 0.3) {
+          this.stationaryFrames++
+        } else {
+          this.stationaryFrames = 0
+        }
+        this.lastAccX = data.x
+        this.lastAccY = data.y
+        this.lastAccZ = data.z
+        this.isStationary = this.stationaryFrames > 10
+        this.updateSleepGuess()
+      }, { interval: 200000000 })
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'accelerometer sensor error: %{public}s', JSON.stringify(e))
+    }
+  }
+
+  startHoldingHandDetect(): void {
+    try {
+      motion.on('holdingHandChanged', (value: number) => {
+        switch (value) {
+          case 0:
+            this.holdingHand = '未握持'
+            break
+          case 1:
+            this.holdingHand = '左手'
+            break
+          case 2:
+            this.holdingHand = '右手'
+            break
+          case 3:
+            this.holdingHand = '双手'
+            break
+          default:
+            this.holdingHand = '未识别'
+            break
+        }
+        this.updateSleepGuess()
+      })
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'holdingHand error: %{public}s', JSON.stringify(e))
+      this.holdingHand = '不支持'
+    }
+  }
+
+  updateSleepGuess(): void {
+    if (this.isStationary && this.isScreenOff && (this.holdingHand === '未握持' || this.holdingHand === '不支持' || this.holdingHand === '未识别')) {
+      this.sleepGuess = '可能入睡'
+    } else if (this.isStationary && !this.isScreenOff) {
+      this.sleepGuess = '静止'
+    } else {
+      this.sleepGuess = '活动'
+    }
   }
 
   async load3DScene(): Promise<void> {
@@ -556,7 +705,8 @@ if (this.sparkleTimer !== -1) clearInterval(this.sparkleTimer)
   AlarmPanel() {
     if (this.showAlarmPanel) {
       Column() {
-        Text('闹钟管理').fontSize(16).fontColor('#FFFFFF').fontWeight(FontWeight.Bold).margin({ bottom: 12 })
+        Text('闹钟管理').fontSize(16).fontColor('#FFFFFF').fontWeight(FontWeight.Bold).margin({ bottom: 4 })
+        Text('闹钟通过日历提醒实现，如需闹铃响铃请去：设置→日历→通知→开启闹铃').fontSize(11).fontColor('#AAAAAA').margin({ bottom: 8 })
         if (this.alarmList.items.length > 0) {
           Text('已设置的闹钟').fontSize(13).fontColor('#42A5F5').margin({ bottom: 6 })
           ForEach(this.alarmList.items, (item: AlarmItem) => {
@@ -791,8 +941,12 @@ Row() {
           this.StatusBar('亲密度', this.spirit.affinity, '#AB47BC', this.spirit.getAffinityDesc())
         }.width('85%').margin({ top: 8 }).padding(10).borderRadius(12).backgroundColor('#1A1A2E')
 
-        Text('v1.1.0 | 拖拽旋转 | 你的专属空间管家灰灰')
-          .fontSize(11).fontColor('#555555').margin({ top: 8, bottom: 16 }).textAlign(TextAlign.Center)
+        Column() {
+          Text(`v1.1.3 | ${this.isScreenOff ? '熄屏' : '亮屏'} | ${this.deviceOrientation} | ${this.isStationary ? '静止' : '运动'} | ${this.holdingHand}握持`)
+            .fontSize(13).fontColor('#888888').textAlign(TextAlign.Center)
+          Text(`状态推测: ${this.sleepGuess}`)
+            .fontSize(13).fontColor(this.sleepGuess === '可能入睡' ? '#FF6B6B' : '#888888').textAlign(TextAlign.Center).margin({ bottom: 16 })
+        }.margin({ top: 8 }).width('100%')
       }.width('100%').alignItems(HorizontalAlign.Center)
     }.width('100%').height('100%').scrollBar(BarState.Off)
     .linearGradient({
