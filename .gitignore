@@ -1,0 +1,12 @@
+build/
+.hvigor/
+entry/build/
+entry/.preview/
+node_modules/
+.hvigor/cache/
+*.hap
+*.app
+oh_modules/
+entry/oh_modules/
+.idea/
+*.tmp.png

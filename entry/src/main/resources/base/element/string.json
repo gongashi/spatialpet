@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Spirit Assistant Module"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "Your Spatial Spirit Assistant"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "精灵管家"
+    }
+  ]
+}

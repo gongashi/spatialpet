@@ -1,0 +1,69 @@
+{
+  "app": {
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\Administrator\\.ohos\\config\\default_SpatialPet_TxFPgYDO9pQKbRhSz8aO-QZV66AgCEqHxvioUNAYYWs=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001B46E040C77ABF5B2EAF05F2BF5502082CE812CA73277DABCFF9881818CC4585F24E449655BACFE6",
+          "profile": "C:\\Users\\Administrator\\.ohos\\config\\default_SpatialPet_TxFPgYDO9pQKbRhSz8aO-QZV66AgCEqHxvioUNAYYWs=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\Administrator\\.ohos\\config\\default_SpatialPet_TxFPgYDO9pQKbRhSz8aO-QZV66AgCEqHxvioUNAYYWs=.p12",
+          "storePassword": "0000001BCEE1FCC96D60076F1279F41DE76EF3CF33B46E4474B7E7E4154C56E644469A2A022AD4A2DDC65E"
+        }
+      },
+      {
+        "name": "debug",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\Administrator\\.ohos\\config\\debug_SpatialPet_TxFPgYDO9pQKbRhSz8aO-QZV66AgCEqHxvioUNAYYWs=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001BCBB76268E985B603C3634CA6D1CFBA14D767A9E7946325E19D764ADEB093F0A3E3DC4E946E1B7A",
+          "profile": "C:\\Users\\Administrator\\.ohos\\config\\debug_SpatialPet_TxFPgYDO9pQKbRhSz8aO-QZV66AgCEqHxvioUNAYYWs=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\Administrator\\.ohos\\config\\debug_SpatialPet_TxFPgYDO9pQKbRhSz8aO-QZV66AgCEqHxvioUNAYYWs=.p12",
+          "storePassword": "0000001B357385604DF798680FF5D281B55D9A893355F1F3A00C600582FA30455668C71992DB485937C5E4"
+        }
+      }
+    ],
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "default",
+        "targetSdkVersion": "6.1.1(24)",
+        "compatibleSdkVersion": "6.1.1(24)",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+        }
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug",
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}
